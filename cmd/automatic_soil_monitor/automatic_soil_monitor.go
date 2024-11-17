@@ -19,6 +19,7 @@ func main() {
 	}
 }
 
+// initialize initializes the sensors and the LED.
 func initialize() {
 	machine.InitADC()
 	sensor1 = machine.ADC{Pin: machine.PA02}
@@ -31,16 +32,19 @@ func initialize() {
 	led.Set(ledPowerState)
 }
 
+// readMoistureLevels reads and reports the moisture levels from the sensors.
 func readMoistureLevels() {
 	readMoistureLevel(sensor1, "Sensor 1")
 	readMoistureLevel(sensor2, "Sensor 2")
 }
 
+// readMoistureLevel reads and reports the moisture level from the given sensor with the given name.
 func readMoistureLevel(input machine.ADC, name string) {
 	reading := input.Get()
 	println(name, ": ", reading)
 }
 
+// toggleLed toggles the state of the LED.
 func toggleLed() {
 	led.Set(ledPowerState)
 	ledPowerState = !ledPowerState
