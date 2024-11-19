@@ -6,6 +6,11 @@ import (
 	"tinygo.org/x/bluetooth"
 )
 
+var btHomeUuid = bluetooth.New16BitUUID(0xFCD2)
+
+const deviceInformation = uint8(0x40)
+const moistureObjectId = uint8(0x2F)
+
 var sensor1 machine.ADC
 var sensor2 machine.ADC
 var led machine.Pin
@@ -40,10 +45,25 @@ func initialize() {
 		restart()
 	}
 
+	serviceData := [...]byte{
+		deviceInformation,
+		moistureObjectId,
+		0,
+		moistureObjectId,
+		0,
+	}
+	println("Service data length: ", len(serviceData))
+
 	bleAdvertisement := bleAdapter.DefaultAdvertisement()
 	err = bleAdvertisement.Configure(bluetooth.AdvertisementOptions{
-		LocalName: "automatic-soil-monitor",
+		LocalName: "soil-monitor",
 		Interval:  bluetooth.NewDuration(5 * time.Second),
+		ServiceData: []bluetooth.ServiceDataElement{
+			{
+				UUID: btHomeUuid,
+				Data: serviceData[:],
+			},
+		},
 	})
 	if err != nil {
 		println("Failed to configure BLE advertisement:", err)
