@@ -37,7 +37,5 @@ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8
 gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
-tinygo.org/x/bluetooth v0.10.1-0.20241117172320-55bb7c15f534 h1:MkD0LTj3uh/uLUM9A9jbPdzh0DRKiJqZR40DugDHDf0=
-tinygo.org/x/bluetooth v0.10.1-0.20241117172320-55bb7c15f534/go.mod h1:gYDiMlKWCxI2ekfGvIQ9rZsUn/fdfBLZfGFknY5Jxmc=
-tinygo.org/x/bluetooth v0.10.1-0.20241127134857-f9fb02df6037 h1:oi2ORKapjJItk6U5SyG0KA/aBpgLahQcV0blTsYMuPE=
-tinygo.org/x/bluetooth v0.10.1-0.20241127134857-f9fb02df6037/go.mod h1:gYDiMlKWCxI2ekfGvIQ9rZsUn/fdfBLZfGFknY5Jxmc=
+tinygo.org/x/bluetooth v0.10.1-0.20241202134342-7dbb60e38a19 h1:UdQg4PhZJsVjGxjL1nPNkndmq1gD2ZF0p/qBvnuU+34=
+tinygo.org/x/bluetooth v0.10.1-0.20241202134342-7dbb60e38a19/go.mod h1:gYDiMlKWCxI2ekfGvIQ9rZsUn/fdfBLZfGFknY5Jxmc=
