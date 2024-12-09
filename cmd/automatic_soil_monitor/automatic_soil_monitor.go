@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"github.com/colececil/automatic-soil-monitor/internal/bluetooth_broadcast"
+	"github.com/colececil/automatic-soil-monitor/internal/moisture_data"
 	"machine"
 	"strconv"
 	"time"
-	"tinygo.org/x/bluetooth"
 )
 
 // The min and max moisture levels are set at build time using values in a .env file. See the readme for more
@@ -13,21 +14,13 @@ import (
 var minMoistureLevelString string
 var maxMoistureLevelString string
 
-var btHomeUuid = bluetooth.New16BitUUID(0xFCD2)
-
-const deviceInformation = uint8(0x40)
-const moistureObjectId = uint8(0x2F)
-
 var sensors [2]machine.ADC
-var moisturePercentages [2]uint8
 var led machine.Pin
 var ledPowerState bool
-var bleAdapter *bluetooth.Adapter
-var bleAdvertisement *bluetooth.Advertisement
-var bleServiceData []bluetooth.ServiceDataElement
-var btHomeData []byte
-var minMoistureLevel int
-var maxMoistureLevel int
+var minMoistureLevel uint16
+var maxMoistureLevel uint16
+var moistureData *moisture_data.MoistureData
+var bluetoothBroadcast *bluetooth_broadcast.BluetoothBroadcast
 
 func main() {
 	initialize()
@@ -40,17 +33,19 @@ func main() {
 
 // initialize initializes the necessary components.
 func initialize() {
-	var err error
-	minMoistureLevel, err = strconv.Atoi(minMoistureLevelString)
+	minAsUint64, err := strconv.ParseUint(minMoistureLevelString, 10, 16)
 	if err != nil {
-		fmt.Println("Failed to parse min moisture level:", err)
-		restart()
+		err = fmt.Errorf("failed to parse min moisture level: %w", err)
+		logErrorAndRestart(err)
 	}
-	maxMoistureLevel, err = strconv.Atoi(maxMoistureLevelString)
+	minMoistureLevel = uint16(minAsUint64)
+
+	maxAsUint64, err := strconv.ParseUint(maxMoistureLevelString, 10, 16)
 	if err != nil {
-		fmt.Println("Failed to parse max moisture level:", err)
-		restart()
+		err = fmt.Errorf("failed to parse max moisture level: %w", err)
+		logErrorAndRestart(err)
 	}
+	maxMoistureLevel = uint16(maxAsUint64)
 
 	machine.InitADC()
 	sensors[0] = machine.ADC{Pin: machine.PA02}
@@ -62,86 +57,34 @@ func initialize() {
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	led.Set(ledPowerState)
 
-	bleAdapter = bluetooth.DefaultAdapter
-	err = bleAdapter.Enable()
+	moistureData = moisture_data.New(
+		2,
+		[]uint16{minMoistureLevel, minMoistureLevel},
+		[]uint16{maxMoistureLevel, maxMoistureLevel},
+	)
+	bluetoothBroadcast, err = bluetooth_broadcast.New(moistureData)
 	if err != nil {
-		fmt.Println("Failed to enable BLE adapter:", err)
-		restart()
+		logErrorAndRestart(err)
 	}
-
-	btHomeData = []byte{
-		deviceInformation,
-		moistureObjectId,
-		moisturePercentages[0],
-		moistureObjectId,
-		moisturePercentages[1],
-	}
-
-	bleAdvertisement = bleAdapter.DefaultAdvertisement()
-	bleServiceData = []bluetooth.ServiceDataElement{
-		{
-			UUID: btHomeUuid,
-			Data: btHomeData,
-		},
-	}
-	err = bleAdvertisement.Configure(bluetooth.AdvertisementOptions{
-		LocalName:   "soil-monitor",
-		ServiceData: bleServiceData,
-	})
-	if err != nil {
-		fmt.Println("Failed to configure BLE advertisement:", err)
-		restart()
-	}
-
-	err = bleAdvertisement.Start()
-	if err != nil {
-		fmt.Println("Failed to start BLE advertisement:", err)
-		restart()
-	}
-}
-
-// updateServiceData updates the service data with the current moisture levels.
-func updateServiceData() {
-	btHomeData[2] = moisturePercentages[0]
-	btHomeData[4] = moisturePercentages[1]
-	err := bleAdvertisement.SetServiceData(bleServiceData)
-	if err != nil {
-		fmt.Println("Failed to update BLE service data:", err)
-		restart()
-	}
-
-	fmt.Print("Service data updated with data: \"")
-	for i, dataByte := range bleServiceData[0].Data {
-		if i > 0 {
-			fmt.Print(" ")
-		}
-		fmt.Printf("%02X", dataByte)
-	}
-	fmt.Println("\"")
 }
 
 // readMoistureLevels reads and reports the moisture levels from the sensors.
 func readMoistureLevels() {
 	readMoistureLevel(0)
 	readMoistureLevel(1)
-	updateServiceData()
-}
-
-// readMoistureLevel reads and reports the moisture level from the given sensor with the given name.
-func readMoistureLevel(sensorIndex uint8) {
-	sensor := sensors[sensorIndex]
-	name := "Sensor " + strconv.Itoa(int(sensorIndex+1))
-	reading := sensor.Get()
-	moisturePercentages[sensorIndex] = calculatePercentage(reading)
-	fmt.Printf("%s: %2d%% (%d)\n", name, moisturePercentages[sensorIndex], reading)
-}
-
-// calculatePercentage calculates the percentage of the given value between the min and max moisture levels.
-func calculatePercentage(value uint16) uint8 {
-	if maxMoistureLevel < minMoistureLevel {
-		return uint8((float64(int(value)-minMoistureLevel) / float64(maxMoistureLevel-minMoistureLevel)) * 100)
+	err := bluetoothBroadcast.SendAdvertisement()
+	if err != nil {
+		logErrorAndRestart(err)
 	}
-	return uint8((float64(maxMoistureLevel-int(value)) / float64(maxMoistureLevel-minMoistureLevel)) * 100)
+}
+
+// readMoistureLevel reads and reports the moisture level from the given sensor.
+func readMoistureLevel(sensorIndex int) {
+	sensor := sensors[sensorIndex]
+	name := "Sensor " + strconv.Itoa(sensorIndex+1)
+	reading := sensor.Get()
+	moistureData.UpdateReading(sensorIndex, reading)
+	fmt.Printf("%s: %2d%% (%d)\n", name, moistureData.LatestReadingAsPercentage(sensorIndex), reading)
 }
 
 // toggleLed toggles the state of the LED.
@@ -150,8 +93,9 @@ func toggleLed() {
 	ledPowerState = !ledPowerState
 }
 
-// restart restarts the device.
-func restart() {
+// logErrorAndRestart logs the given error and restarts the device.
+func logErrorAndRestart(err error) {
+	fmt.Println("Error:", err)
 	fmt.Println("Restarting in 5 seconds...")
 	time.Sleep(5 * time.Second)
 	machine.CPUReset()
