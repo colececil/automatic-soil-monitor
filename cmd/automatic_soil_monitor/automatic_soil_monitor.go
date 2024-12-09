@@ -2,146 +2,133 @@ package main
 
 import (
 	"fmt"
+	"github.com/colececil/automatic-soil-monitor/internal/bluetooth_broadcast"
+	"github.com/colececil/automatic-soil-monitor/internal/moisture_data"
 	"machine"
 	"strconv"
+	"strings"
 	"time"
-	"tinygo.org/x/bluetooth"
 )
 
-// The min and max moisture levels are set at build time using values in a .env file. See the readme for more
-// information.
-var minMoistureLevelString string
-var maxMoistureLevelString string
+// These settings are initialized at build time using values in a .env file. See the readme for more information.
+var broadcastIntervalSetting string
+var sensorPinsSetting string
+var sensorDryCalibrationsSetting string
+var sensorWetCalibrationsSetting string
 
-var btHomeUuid = bluetooth.New16BitUUID(0xFCD2)
-
-const deviceInformation = uint8(0x40)
-const moistureObjectId = uint8(0x2F)
-
-var sensors [2]machine.ADC
-var moisturePercentages [2]uint8
+var broadcastInterval time.Duration
+var sensors []machine.ADC
 var led machine.Pin
 var ledPowerState bool
-var bleAdapter *bluetooth.Adapter
-var bleAdvertisement *bluetooth.Advertisement
-var bleServiceData []bluetooth.ServiceDataElement
-var btHomeData []byte
-var minMoistureLevel int
-var maxMoistureLevel int
+var moistureData *moisture_data.MoistureData
+var bluetoothBroadcast *bluetooth_broadcast.BluetoothBroadcast
 
 func main() {
 	initialize()
 	for {
 		toggleLed()
-		readMoistureLevels()
-		time.Sleep(time.Second)
+		err := broadcastCurrentMoistureLevels()
+		if err != nil {
+			logErrorAndRestart(err)
+		}
+		time.Sleep(broadcastInterval)
 	}
 }
 
-// initialize initializes the necessary components.
+// initialize initializes the variables and components necessary for the program to run.
 func initialize() {
 	var err error
-	minMoistureLevel, err = strconv.Atoi(minMoistureLevelString)
+	broadcastInterval, err = time.ParseDuration(broadcastIntervalSetting)
 	if err != nil {
-		fmt.Println("Failed to parse min moisture level:", err)
-		restart()
-	}
-	maxMoistureLevel, err = strconv.Atoi(maxMoistureLevelString)
-	if err != nil {
-		fmt.Println("Failed to parse max moisture level:", err)
-		restart()
+		err = fmt.Errorf("failed to parse broadcast duration: %w", err)
+		logErrorAndRestart(err)
 	}
 
+	err = initializeSensors()
+	if err != nil {
+		logErrorAndRestart(err)
+	}
+
+	sensorDryCalibrations, err := getSensorCalibrations(sensorDryCalibrationsSetting)
+	if err != nil {
+		logErrorAndRestart(err)
+	}
+	sensorWetCalibrations, err := getSensorCalibrations(sensorWetCalibrationsSetting)
+	if err != nil {
+		logErrorAndRestart(err)
+	}
+	moistureData = moisture_data.New(
+		len(sensors),
+		sensorDryCalibrations,
+		sensorWetCalibrations,
+	)
+
+	bluetoothBroadcast, err = bluetooth_broadcast.New(moistureData)
+	if err != nil {
+		logErrorAndRestart(err)
+	}
+
+	initializeLed()
+
+	fmt.Printf("Initialization complete with %d moisture sensors.\n", len(sensors))
+}
+
+// initializeSensors initializes the pins for the moisture sensors, using the pins identified in the .env file. It
+// returns an error if the string from the .env file does not match the expected format.
+func initializeSensors() error {
 	machine.InitADC()
-	sensors[0] = machine.ADC{Pin: machine.PA02}
-	sensors[0].Configure(machine.ADCConfig{})
-	sensors[1] = machine.ADC{Pin: machine.PB02}
-	sensors[1].Configure(machine.ADCConfig{})
+	sensorPinStrings := strings.Split(sensorPinsSetting, ",")
+	sensors = make([]machine.ADC, len(sensorPinStrings))
+	for i, pinString := range sensorPinStrings {
+		pinAsUint64, err := strconv.ParseUint(pinString, 10, 8)
+		if err != nil {
+			err = fmt.Errorf("failed to parse pin number for Sensor %d: %w", i+1, err)
+			return err
+		}
+		sensors[i] = machine.ADC{Pin: machine.Pin(pinAsUint64)}
+		sensors[i].Configure(machine.ADCConfig{})
+	}
+	return nil
+}
 
+// getSensorCalibrations parses the given string of comma-separated numbers and returns an equivalent slice of uint16
+// values. It returns an error if the given string does not match the expected format, or if the number of calibrations
+// does not match the number of sensors in the sensor slice.
+func getSensorCalibrations(calibrationsString string) ([]uint16, error) {
+	calibrationStrings := strings.Split(calibrationsString, ",")
+	calibrations := make([]uint16, len(calibrationStrings))
+	if len(calibrationStrings) != len(sensors) {
+		err := fmt.Errorf("number of calibrations does not match number of sensors")
+		return nil, err
+	}
+	for i, calibrationString := range calibrationStrings {
+		calibration, err := strconv.ParseUint(calibrationString, 10, 16)
+		if err != nil {
+			err = fmt.Errorf("failed to parse calibration number for Sensor %d: %w", i+1, err)
+			return nil, err
+		}
+		calibrations[i] = uint16(calibration)
+	}
+	return calibrations, nil
+}
+
+// broadcastCurrentMoistureLevels reads the current moisture levels from the sensors and broadcasts them via BLE. It
+// returns an error if there is an issue broadcasting the data.
+func broadcastCurrentMoistureLevels() error {
+	fmt.Println("\nGetting updated data from moisture sensors...")
+	for i := range sensors {
+		sensor := sensors[i]
+		reading := sensor.Get()
+		moistureData.UpdateReading(i, reading)
+	}
+	return bluetoothBroadcast.SendAdvertisement()
+}
+
+// initializeLed initializes the LED pin.
+func initializeLed() {
 	led = machine.LED
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	led.Set(ledPowerState)
-
-	bleAdapter = bluetooth.DefaultAdapter
-	err = bleAdapter.Enable()
-	if err != nil {
-		fmt.Println("Failed to enable BLE adapter:", err)
-		restart()
-	}
-
-	btHomeData = []byte{
-		deviceInformation,
-		moistureObjectId,
-		moisturePercentages[0],
-		moistureObjectId,
-		moisturePercentages[1],
-	}
-
-	bleAdvertisement = bleAdapter.DefaultAdvertisement()
-	bleServiceData = []bluetooth.ServiceDataElement{
-		{
-			UUID: btHomeUuid,
-			Data: btHomeData,
-		},
-	}
-	err = bleAdvertisement.Configure(bluetooth.AdvertisementOptions{
-		LocalName:   "soil-monitor",
-		ServiceData: bleServiceData,
-	})
-	if err != nil {
-		fmt.Println("Failed to configure BLE advertisement:", err)
-		restart()
-	}
-
-	err = bleAdvertisement.Start()
-	if err != nil {
-		fmt.Println("Failed to start BLE advertisement:", err)
-		restart()
-	}
-}
-
-// updateServiceData updates the service data with the current moisture levels.
-func updateServiceData() {
-	btHomeData[2] = moisturePercentages[0]
-	btHomeData[4] = moisturePercentages[1]
-	err := bleAdvertisement.SetServiceData(bleServiceData)
-	if err != nil {
-		fmt.Println("Failed to update BLE service data:", err)
-		restart()
-	}
-
-	fmt.Print("Service data updated with data: \"")
-	for i, dataByte := range bleServiceData[0].Data {
-		if i > 0 {
-			fmt.Print(" ")
-		}
-		fmt.Printf("%02X", dataByte)
-	}
-	fmt.Println("\"")
-}
-
-// readMoistureLevels reads and reports the moisture levels from the sensors.
-func readMoistureLevels() {
-	readMoistureLevel(0)
-	readMoistureLevel(1)
-	updateServiceData()
-}
-
-// readMoistureLevel reads and reports the moisture level from the given sensor with the given name.
-func readMoistureLevel(sensorIndex uint8) {
-	sensor := sensors[sensorIndex]
-	name := "Sensor " + strconv.Itoa(int(sensorIndex+1))
-	reading := sensor.Get()
-	moisturePercentages[sensorIndex] = calculatePercentage(reading)
-	fmt.Printf("%s: %2d%% (%d)\n", name, moisturePercentages[sensorIndex], reading)
-}
-
-// calculatePercentage calculates the percentage of the given value between the min and max moisture levels.
-func calculatePercentage(value uint16) uint8 {
-	if maxMoistureLevel < minMoistureLevel {
-		return uint8((float64(int(value)-minMoistureLevel) / float64(maxMoistureLevel-minMoistureLevel)) * 100)
-	}
-	return uint8((float64(maxMoistureLevel-int(value)) / float64(maxMoistureLevel-minMoistureLevel)) * 100)
 }
 
 // toggleLed toggles the state of the LED.
@@ -150,8 +137,9 @@ func toggleLed() {
 	ledPowerState = !ledPowerState
 }
 
-// restart restarts the device.
-func restart() {
+// logErrorAndRestart logs the given error and restarts the device.
+func logErrorAndRestart(err error) {
+	fmt.Println("Error:", err)
 	fmt.Println("Restarting in 5 seconds...")
 	time.Sleep(5 * time.Second)
 	machine.CPUReset()

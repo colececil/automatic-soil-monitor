@@ -5,7 +5,10 @@ include .env
 
 TINYGO_ARGS = \
 	-ldflags \
-		"-X main.minMoistureLevelString=${MIN_MOISTURE_LEVEL} -X main.maxMoistureLevelString=${MAX_MOISTURE_LEVEL}" \
+		"-X main.broadcastIntervalSetting=${BROADCAST_INTERVAL} \
+		-X main.sensorPinsSetting=${SENSOR_PINS} \
+		-X main.sensorDryCalibrationsSetting=${SENSOR_DRY_CALIBRATIONS} \
+		-X main.sensorWetCalibrationsSetting=${SENSOR_WET_CALIBRATIONS}" \
 	-target ${MICROCONTROLLER_TYPE} \
 	-size full \
 	./cmd/automatic_soil_monitor
