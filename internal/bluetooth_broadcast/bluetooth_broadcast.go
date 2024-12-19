@@ -10,7 +10,6 @@ var btHomeServiceUuid = bluetooth.New16BitUUID(0xFCD2)
 
 const btHomeDeviceInformation = uint8(0x40)
 const btHomeMoistureObjectId = uint8(0x2F)
-const btHomeCountObjectId = uint8(0x3D)
 
 type BluetoothBroadcast struct {
 	adapter       *bluetooth.Adapter
@@ -79,8 +78,5 @@ func setBtHomeData(btHomeData []byte, moistureData *moisture_data.MoistureData) 
 		pos := i * 5
 		btHomeData[pos+1] = btHomeMoistureObjectId
 		btHomeData[pos+2] = moistureData.LatestReadingAsPercentage(i)
-		btHomeData[pos+3] = btHomeCountObjectId
-		btHomeData[pos+4] = 0 // Todo: Set bytes of count using little endian byte order.
-		btHomeData[pos+5] = 0
 	}
 }

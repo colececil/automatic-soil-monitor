@@ -6,20 +6,19 @@ import (
 	"github.com/colececil/automatic-soil-monitor/internal/moisture_data"
 	"machine"
 	"strconv"
+	"strings"
 	"time"
 )
 
-// Todo: Dynamically determine number of sensors from .env file.
-// The min and max moisture levels are set at build time using values in a .env file. See the readme for more
+// The sensor dry and wet calibrations are set at build time using values in a .env file. See the readme for more
 // information.
-var minMoistureLevelString string
-var maxMoistureLevelString string
+var sensorPins string
+var sensorDryCalibrations string
+var sensorWetCalibrations string
 
-var sensors [2]machine.ADC
+var sensors []machine.ADC
 var led machine.Pin
 var ledPowerState bool
-var minMoistureLevel uint16
-var maxMoistureLevel uint16
 var moistureData *moisture_data.MoistureData
 var bluetoothBroadcast *bluetooth_broadcast.BluetoothBroadcast
 
@@ -34,25 +33,48 @@ func main() {
 
 // initialize initializes the necessary components.
 func initialize() {
-	minAsUint64, err := strconv.ParseUint(minMoistureLevelString, 10, 16)
-	if err != nil {
-		err = fmt.Errorf("failed to parse min moisture level: %w", err)
-		logErrorAndRestart(err)
-	}
-	minMoistureLevel = uint16(minAsUint64)
-
-	maxAsUint64, err := strconv.ParseUint(maxMoistureLevelString, 10, 16)
-	if err != nil {
-		err = fmt.Errorf("failed to parse max moisture level: %w", err)
-		logErrorAndRestart(err)
-	}
-	maxMoistureLevel = uint16(maxAsUint64)
-
 	machine.InitADC()
-	sensors[0] = machine.ADC{Pin: machine.PA02}
-	sensors[0].Configure(machine.ADCConfig{})
-	sensors[1] = machine.ADC{Pin: machine.PB02}
-	sensors[1].Configure(machine.ADCConfig{})
+	sensorPinStrings := strings.Split(sensorPins, ",")
+	sensors = make([]machine.ADC, len(sensorPinStrings))
+	for i, pinString := range sensorPinStrings {
+		pinAsUint64, err := strconv.ParseUint(pinString, 10, 8)
+		if err != nil {
+			err = fmt.Errorf("failed to parse pin number for Sensor %d: %w", i+1, err)
+			logErrorAndRestart(err)
+		}
+		sensors[i] = machine.ADC{Pin: machine.Pin(pinAsUint64)}
+		sensors[i].Configure(machine.ADCConfig{})
+	}
+
+	sensorDryCalibrationStrings := strings.Split(sensorDryCalibrations, ",")
+	sensorDryCalibrations := make([]uint16, len(sensorDryCalibrationStrings))
+	if len(sensorDryCalibrationStrings) != len(sensors) {
+		err := fmt.Errorf("number of dry calibrations does not match number of sensors")
+		logErrorAndRestart(err)
+	}
+	for i, calibrationString := range sensorDryCalibrationStrings {
+		calibration, err := strconv.ParseUint(calibrationString, 10, 16)
+		if err != nil {
+			err = fmt.Errorf("failed to parse dry calibration number for Sensor %d: %w", i+1, err)
+			logErrorAndRestart(err)
+		}
+		sensorDryCalibrations[i] = uint16(calibration)
+	}
+
+	sensorWetCalibrationStrings := strings.Split(sensorWetCalibrations, ",")
+	sensorWetCalibrations := make([]uint16, len(sensorWetCalibrationStrings))
+	if len(sensorWetCalibrationStrings) != len(sensors) {
+		err := fmt.Errorf("number of wet calibrations does not match number of sensors")
+		logErrorAndRestart(err)
+	}
+	for i, calibrationString := range sensorWetCalibrationStrings {
+		calibration, err := strconv.ParseUint(calibrationString, 10, 16)
+		if err != nil {
+			err = fmt.Errorf("failed to parse wet calibration number for Sensor %d: %w", i+1, err)
+			logErrorAndRestart(err)
+		}
+		sensorWetCalibrations[i] = uint16(calibration)
+	}
 
 	led = machine.LED
 	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
@@ -60,9 +82,10 @@ func initialize() {
 
 	moistureData = moisture_data.New(
 		2,
-		[]uint16{minMoistureLevel, minMoistureLevel},
-		[]uint16{maxMoistureLevel, maxMoistureLevel},
+		sensorDryCalibrations,
+		sensorWetCalibrations,
 	)
+	var err error
 	bluetoothBroadcast, err = bluetooth_broadcast.New(moistureData)
 	if err != nil {
 		logErrorAndRestart(err)
@@ -71,8 +94,9 @@ func initialize() {
 
 // readMoistureLevels reads and reports the moisture levels from the sensors.
 func readMoistureLevels() {
-	readMoistureLevel(0)
-	readMoistureLevel(1)
+	for i := range sensors {
+		readMoistureLevel(i)
+	}
 	err := bluetoothBroadcast.SendAdvertisement()
 	if err != nil {
 		logErrorAndRestart(err)
