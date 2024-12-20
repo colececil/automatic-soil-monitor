@@ -78,7 +78,7 @@ func (b *BluetoothBroadcast) SendAdvertisement() error {
 func setBtHomeData(btHomeData []byte, moistureData *moisture_data.MoistureData) {
 	btHomeData[0] = btHomeDeviceInformation
 	for i := 0; i < moistureData.NumSensors(); i++ {
-		pos := i * 5
+		pos := i * 2
 		btHomeData[pos+1] = btHomeMoistureObjectId
 		btHomeData[pos+2] = moistureData.LatestReadingAsPercentage(i)
 	}
