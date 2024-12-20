@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := flash
-.PHONY: flash build
+.PHONY: flash build check-env
 
 include .env
 
@@ -13,10 +13,32 @@ TINYGO_ARGS = \
 	-size full \
 	./cmd/automatic_soil_monitor
 
-flash:
+check-env:
+ifndef BROADCAST_INTERVAL
+	@echo "The BROADCAST_INTERVAL environment variable must be set."
+	@exit 1
+endif
+ifndef SENSOR_PINS
+	@echo "The SENSOR_PINS environment variable must be set."
+	@exit 1
+endif
+ifndef SENSOR_DRY_CALIBRATIONS
+	@echo "The SENSOR_DRY_CALIBRATIONS environment variable must be set."
+	@exit 1
+endif
+ifndef SENSOR_WET_CALIBRATIONS
+	@echo "The SENSOR_WET_CALIBRATIONS environment variable must be set."
+	@exit 1
+endif
+ifndef MICROCONTROLLER_TYPE
+	@echo "The MICROCONTROLLER_TYPE environment variable must be set."
+	@exit 1
+endif
+
+flash: check-env
 	@echo "Building and flashing program..."
 	tinygo flash -monitor $(TINYGO_ARGS)
 
-build:
+build: check-env
 	@echo "Building program..."
 	tinygo build $(TINYGO_ARGS)
