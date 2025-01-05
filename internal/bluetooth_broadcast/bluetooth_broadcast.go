@@ -3,14 +3,10 @@ package bluetooth_broadcast
 import (
 	"fmt"
 	"github.com/colececil/automatic-soil-monitor/internal/moisture_data"
+	"github.com/hybridgroup/go-bthome"
 	"time"
 	"tinygo.org/x/bluetooth"
 )
-
-var btHomeServiceUuid = bluetooth.New16BitUUID(0xFCD2)
-
-const btHomeDeviceInformation = uint8(0x40)
-const btHomeMoistureObjectId = uint8(0x2F)
 
 // BluetoothBroadcast represents a bluetooth adapter that broadcasts data from an associated MoistureData instance,
 // using the BTHome protocol.
@@ -51,15 +47,15 @@ func (b *BluetoothBroadcast) AdvertiseLatestData() error {
 		}
 	}
 
+	btHomeData, err := b.getBtHomeData()
+	if err != nil {
+		return fmt.Errorf("failed to construct BTHome service data: %w", err)
+	}
+
 	err = b.advertisement.Configure(bluetooth.AdvertisementOptions{
-		LocalName: "soil-monitor",
-		ServiceData: []bluetooth.ServiceDataElement{
-			{
-				UUID: btHomeServiceUuid,
-				Data: b.getBtHomeData(),
-			},
-		},
-		Interval: bluetooth.NewDuration(b.broadcastInterval),
+		LocalName:   "soil-monitor",
+		ServiceData: []bluetooth.ServiceDataElement{btHomeData},
+		Interval:    bluetooth.NewDuration(b.broadcastInterval),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to configure BLE advertisement: %w", err)
@@ -75,14 +71,19 @@ func (b *BluetoothBroadcast) AdvertiseLatestData() error {
 	return nil
 }
 
-// getBtHomeData constructs BTHome data using the latest data from the MoistureData instance.
-func (b *BluetoothBroadcast) getBtHomeData() []byte {
-	btHomeData := make([]byte, 1+5*b.moistureData.NumSensors())
-	btHomeData[0] = btHomeDeviceInformation
+// getBtHomeData constructs BTHome service data using the latest data from the MoistureData instance.
+func (b *BluetoothBroadcast) getBtHomeData() (bluetooth.ServiceDataElement, error) {
+	payload := &bthome.Payload{}
 	for i := 0; i < b.moistureData.NumSensors(); i++ {
-		pos := i * 2
-		btHomeData[pos+1] = btHomeMoistureObjectId
-		btHomeData[pos+2] = b.moistureData.LatestReadingAsPercentage(i)
+		err := payload.AddData(
+			bthome.DataValue{
+				Type:  bthome.Moisture8,
+				Value: []byte{b.moistureData.LatestReadingAsPercentage(i)},
+			},
+		)
+		if err != nil {
+			return bluetooth.ServiceDataElement{}, err
+		}
 	}
-	return btHomeData
+	return payload.ServiceData(), nil
 }

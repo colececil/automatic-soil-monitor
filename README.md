@@ -24,7 +24,7 @@ Each capacitive moisture sensor has three wires: a power wire ("VCC"), a ground 
 
 In order to build the project and flash it to your microcontroller, you'll need the following:
 
-- [Go v1.22.3+](https://go.dev/)
+- [Go v1.23.0+](https://go.dev/)
 - [TinyGo v0.34+](https://tinygo.org/): Follow the install guide specific to your operating system [here](https://tinygo.org/getting-started/install/), and be sure to note the instructions specific to the microcontroller you're using. (You should also be able to find setup instructions specific to your microcontroller [here](https://tinygo.org/docs/reference/microcontrollers/).)
     - Depending on your microcontroller's type of BLE chip, you may need to do some additional setup. See the [Go Bluetooth](https://github.com/tinygo-org/bluetooth) readme for details.
 - [Make](https://www.gnu.org/software/make/)

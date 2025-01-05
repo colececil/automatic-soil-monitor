@@ -1,8 +1,13 @@
 module github.com/colececil/automatic-soil-monitor
 
-go 1.22.3
+go 1.23.0
 
-require tinygo.org/x/bluetooth v0.10.1-0.20250105091827-afac5f03de2b
+toolchain go1.23.4
+
+require (
+	github.com/hybridgroup/go-bthome v0.0.0-20250105121424-8fccfe1fca6d
+	tinygo.org/x/bluetooth v0.10.1-0.20250105091827-afac5f03de2b
+)
 
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
