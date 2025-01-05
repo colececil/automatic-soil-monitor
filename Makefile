@@ -5,7 +5,7 @@ include .env
 
 TINYGO_ARGS = \
 	-ldflags \
-		"-X main.broadcastIntervalSetting=${BROADCAST_INTERVAL} \
+		"-X main.updateIntervalSetting=${UPDATE_INTERVAL} \
 		-X main.sensorPinsSetting=${SENSOR_PINS} \
 		-X main.sensorDryCalibrationsSetting=${SENSOR_DRY_CALIBRATIONS} \
 		-X main.sensorWetCalibrationsSetting=${SENSOR_WET_CALIBRATIONS}" \
@@ -14,8 +14,8 @@ TINYGO_ARGS = \
 	./cmd/automatic_soil_monitor
 
 check-env:
-ifndef BROADCAST_INTERVAL
-	@echo "The BROADCAST_INTERVAL environment variable must be set."
+ifndef UPDATE_INTERVAL
+	@echo "The UPDATE_INTERVAL environment variable must be set."
 	@exit 1
 endif
 ifndef SENSOR_PINS

@@ -34,7 +34,7 @@ In order to build the project and flash it to your microcontroller, you'll need 
 Before building, the project requires some configuration values to be set. You'll need to create a `.env` file at the project root, and then set the following environment variables within it:
 
 - `MICROCONTROLLER_TYPE`: The type of microcontroller you're using. See [this page](https://tinygo.org/docs/reference/microcontrollers/machine/) for a list of valid microcontroller types. You should be able to find the right value to use for your microcontroller [here](https://tinygo.org/docs/reference/microcontrollers/). Once you navigate to the page for your microcontroller, do a search for `-target` to find the example command for flashing to the microcontroller. The value you'll need is the one directly following the `-target` flag.
-- `BROADCAST_INTERVAL`: The interval at which the project will broadcast updated moisture data via BLE. This must be a duration in the format used by Go's [time.ParseDuration](https://pkg.go.dev/time#ParseDuration) function.
+- `UPDATE_INTERVAL`: The interval at which the project will take updated readings from the moisture sensors. This must be a duration in the format used by Go's [time.ParseDuration](https://pkg.go.dev/time#ParseDuration) function. (Note that the update interval determines the broadcast interval, but the two are not the same. For values up to 10 minutes, the broadcast interval will be the same as the update interval, but for values longer than 10 minutes, the broadcast interval will remain at 10 minutes. This is done to decrease the likelihood of data points being missed by the receiver.)
 - `SENSOR_PINS`: The analog input pins on the microcontroller that will be used to read the moisture sensor values. This must be a comma-separated list of the pin numbers that your moisture sensors are connected to on your microcontroller. Note that the actual numbers that TinyGo uses are needed, not the pin names. You should be able to find these under your microcontroller's type [here](https://tinygo.org/docs/reference/microcontrollers/machine/).
 - `SENSOR_DRY_CALIBRATIONS`: The "dry" calibration values for each moisture sensor. This must be a comma-separated list of integers, in the same order as the pins in `SENSOR_PINS`. See the [Calibration](#calibration) section below for more information.
 - `SENSOR_WET_CALIBRATIONS`: The "wet" calibration values for each moisture sensor. This must be a comma-separated list of integers, in the same order as the pins in `SENSOR_PINS`. See the [Calibration](#calibration) section below for more information.
@@ -43,7 +43,7 @@ Here is an example of what a `.env` file for this project might look like:
 
 ```
 MICROCONTROLLER_TYPE=arduino-nano33
-BROADCAST_INTERVAL=1h
+UPDATE_INTERVAL=1h
 SENSOR_PINS=2,34
 SENSOR_DRY_CALIBRATIONS=56656,56128
 SENSOR_WET_CALIBRATIONS=31872,31232
@@ -61,11 +61,11 @@ In order to interpret the data from the soil moisture sensors in a meaningful wa
 
 In order to determine what values to use for the "dry" and "wet" calibrations, follow these steps:
 
-1. In your `.env` file, temporarily set `SENSOR_DRY_CALIBRATIONS` and `SENSOR_WET_CALIBRATIONS` to any arbitrary values for each sensor, as long as the two values are different. You should also temporarily set `BROADCAST_INTERVAL` to a short duration, such as `5s`. This will cause the program to take readings more frequently, which will help you determine the "dry" and "wet" calibration values more easily.
+1. In your `.env` file, temporarily set `SENSOR_DRY_CALIBRATIONS` and `SENSOR_WET_CALIBRATIONS` to any arbitrary values for each sensor, as long as the two values are different. You should also temporarily set `UPDATE_INTERVAL` to a short duration, such as `5s`. This will cause the program to take readings more frequently, which will help you determine the "dry" and "wet" calibration values more easily.
 2. Stick all the sensors into some completely dry soil. (The soil should be the same as or similar to what you'll be using the sensors to monitor.)
 3. Run `make` to build the program and flash it to your microcontroller. Leave the serial monitor running after flashing, as you will use the program's log output to obtain the "dry" and "wet" values.
 4. Let the program run for several iterations, to allow it to take several readings while the soil is dry. For each iteration, the logs will show the current reading, along with the minimum and maximum readings seen so far.
 5. With the program still running and the sensors still in the soil, water the soil until it's completely wet. Again, let the program run for several iterations, allowing it to take several readings while the soil is wet. The logs will continue to track the minimum and maximum readings seen so far.
 6. You can now press Ctrl+C to exit the serial monitor. Refer to the last set of logs shown to get the final minimum and maximum readings for each sensor. One of these will be the "dry" value, and the other will be the "wet" value. You can check against the current reading to determine which is which.
-7. Now that you have the values, use them to update `SENSOR_DRY_CALIBRATIONS` and `SENSOR_WET_CALIBRATIONS` in your `.env` file. You can also set `BROADCAST_INTERVAL` to a sensible duration for long-term monitoring, such as `1h`.
+7. Now that you have the values, use them to update `SENSOR_DRY_CALIBRATIONS` and `SENSOR_WET_CALIBRATIONS` in your `.env` file. You can also set `UPDATE_INTERVAL` to a sensible duration for long-term monitoring, such as `1h`.
 8. With the values updated, run `make` once again to update the program on your microcontroller.

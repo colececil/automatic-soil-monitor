@@ -3,6 +3,7 @@ package bluetooth_broadcast
 import (
 	"fmt"
 	"github.com/colececil/automatic-soil-monitor/internal/moisture_data"
+	"time"
 	"tinygo.org/x/bluetooth"
 )
 
@@ -14,72 +15,74 @@ const btHomeMoistureObjectId = uint8(0x2F)
 // BluetoothBroadcast represents a bluetooth adapter that broadcasts data from an associated MoistureData instance,
 // using the BTHome protocol.
 type BluetoothBroadcast struct {
-	adapter       *bluetooth.Adapter
-	advertisement *bluetooth.Advertisement
-	serviceData   []bluetooth.ServiceDataElement
-	btHomeData    []byte
-	moistureData  *moisture_data.MoistureData
+	advertisement     *bluetooth.Advertisement
+	moistureData      *moisture_data.MoistureData
+	broadcastInterval time.Duration
+	isRunning         bool
 }
 
 // New creates a new BluetoothBroadcast instance. moistureData should be set to a MoistureData instance that contains
 // the data to broadcast.
-func New(moistureData *moisture_data.MoistureData) (*BluetoothBroadcast, error) {
+func New(moistureData *moisture_data.MoistureData, broadcastInterval time.Duration) (*BluetoothBroadcast, error) {
 	adapter := bluetooth.DefaultAdapter
 	err := adapter.Enable()
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable BLE adapter: %w", err)
 	}
 
-	btHomeData := make([]byte, 1+5*moistureData.NumSensors())
-	setBtHomeData(btHomeData, moistureData)
-
-	serviceData := []bluetooth.ServiceDataElement{
-		{
-			UUID: btHomeServiceUuid,
-			Data: btHomeData,
-		},
-	}
-
 	advertisement := adapter.DefaultAdvertisement()
-	err = advertisement.Configure(bluetooth.AdvertisementOptions{
-		LocalName:   "soil-monitor",
-		ServiceData: serviceData,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure BLE advertisement: %w", err)
-	}
-
-	err = advertisement.Start()
-	if err != nil {
-		return nil, fmt.Errorf("failed to start BLE advertisement: %w", err)
-	}
 
 	return &BluetoothBroadcast{
-		adapter:       adapter,
-		advertisement: advertisement,
-		serviceData:   serviceData,
-		btHomeData:    btHomeData,
-		moistureData:  moistureData,
+		advertisement:     advertisement,
+		moistureData:      moistureData,
+		broadcastInterval: broadcastInterval,
 	}, nil
 }
 
-// SendAdvertisement sends a BLE advertisement containing the latest data from the MoistureData instance.
-func (b *BluetoothBroadcast) SendAdvertisement() error {
-	setBtHomeData(b.btHomeData, b.moistureData)
-	err := b.advertisement.SetServiceData(b.serviceData)
-	if err != nil {
-		return fmt.Errorf("failed to update BLE service data: %w", err)
+// AdvertiseLatestData starts advertising the latest data from the MoistureData instance. If it's already advertising
+// when this is called, it will be stopped and restarted.
+func (b *BluetoothBroadcast) AdvertiseLatestData() error {
+	var err error
+
+	if b.isRunning {
+		err = b.advertisement.Stop()
+		if err != nil {
+			return fmt.Errorf("failed to stop BLE advertisement: %w", err)
+		}
 	}
-	fmt.Println("BLE advertisement sent.")
+
+	err = b.advertisement.Configure(bluetooth.AdvertisementOptions{
+		LocalName: "soil-monitor",
+		ServiceData: []bluetooth.ServiceDataElement{
+			{
+				UUID: btHomeServiceUuid,
+				Data: b.getBtHomeData(),
+			},
+		},
+		Interval: bluetooth.NewDuration(b.broadcastInterval),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to configure BLE advertisement: %w", err)
+	}
+
+	err = b.advertisement.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start BLE advertisement: %w", err)
+	}
+
+	fmt.Println("Started BLE advertisement using latest data.")
+	b.isRunning = true
 	return nil
 }
 
-// setBtHomeData updates the btHomeData with the latest data from the MoistureData instance.
-func setBtHomeData(btHomeData []byte, moistureData *moisture_data.MoistureData) {
+// getBtHomeData constructs BTHome data using the latest data from the MoistureData instance.
+func (b *BluetoothBroadcast) getBtHomeData() []byte {
+	btHomeData := make([]byte, 1+5*b.moistureData.NumSensors())
 	btHomeData[0] = btHomeDeviceInformation
-	for i := 0; i < moistureData.NumSensors(); i++ {
+	for i := 0; i < b.moistureData.NumSensors(); i++ {
 		pos := i * 2
 		btHomeData[pos+1] = btHomeMoistureObjectId
-		btHomeData[pos+2] = moistureData.LatestReadingAsPercentage(i)
+		btHomeData[pos+2] = b.moistureData.LatestReadingAsPercentage(i)
 	}
+	return btHomeData
 }

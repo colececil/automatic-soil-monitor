@@ -10,13 +10,15 @@ import (
 	"time"
 )
 
+const maxBroadcastInterval = 10 * time.Minute
+
 // These settings are initialized at build time using values in a .env file. See the readme for more information.
-var broadcastIntervalSetting string
+var updateIntervalSetting string
 var sensorPinsSetting string
 var sensorDryCalibrationsSetting string
 var sensorWetCalibrationsSetting string
 
-var broadcastInterval time.Duration
+var updateInterval time.Duration
 var sensors []machine.ADC
 var led machine.Pin
 var ledPowerState bool
@@ -31,16 +33,16 @@ func main() {
 		if err != nil {
 			logErrorAndRestart(err)
 		}
-		time.Sleep(broadcastInterval)
+		time.Sleep(updateInterval)
 	}
 }
 
 // initialize initializes the variables and components necessary for the program to run.
 func initialize() {
 	var err error
-	broadcastInterval, err = time.ParseDuration(broadcastIntervalSetting)
+	updateInterval, err = time.ParseDuration(updateIntervalSetting)
 	if err != nil {
-		err = fmt.Errorf("failed to parse broadcast duration: %w", err)
+		err = fmt.Errorf("failed to parse broadcast interval: %w", err)
 		logErrorAndRestart(err)
 	}
 
@@ -63,7 +65,11 @@ func initialize() {
 		sensorWetCalibrations,
 	)
 
-	bluetoothBroadcast, err = bluetooth_broadcast.New(moistureData)
+	broadcastInterval := maxBroadcastInterval
+	if updateInterval < broadcastInterval {
+		broadcastInterval = updateInterval
+	}
+	bluetoothBroadcast, err = bluetooth_broadcast.New(moistureData, broadcastInterval)
 	if err != nil {
 		logErrorAndRestart(err)
 	}
@@ -121,7 +127,7 @@ func broadcastCurrentMoistureLevels() error {
 		reading := sensor.Get()
 		moistureData.UpdateReading(i, reading)
 	}
-	return bluetoothBroadcast.SendAdvertisement()
+	return bluetoothBroadcast.AdvertiseLatestData()
 }
 
 // initializeLed initializes the LED pin.
